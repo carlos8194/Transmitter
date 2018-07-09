@@ -42,6 +42,7 @@ unsigned length;
 struct sockaddr_in server, from;
 struct hostent *hp;
 
+void printWindow();
 void error(const char*);
 void ack_listener();
 
@@ -79,18 +80,20 @@ int main(int argc, char *argv[]) {
     while (true) {
         // Send the whole window, then wait for the ACK or until time out
         window_lock.lock();
+
+        // Depending on the retransmitting condition adjust the sequence numbers.
+        if(retransmitting){
+            currentSequence = window_start_seq;
+            cout << "Retransmitting window. First Seq: " << currentSequence << endl;
+        } else{
+            window_start_seq = currentSequence;
+        }
+
+        t1 = time(nullptr);
         for (unsigned short i = 0; i < window; ++i) {
             // Send a packet at a time.
             this_thread::sleep_for(chrono::seconds(PACKET_SEND_TIME)); // Wait 1 second
             randNumber = rand() % 10;
-
-            // Depending on the retransmitting condition adjust the sequence numbers.
-            if(retransmitting){
-                currentSequence = window_start_seq;
-                cout << "Retransmitting window. First Seq: " << currentSequence << endl;
-            } else{
-                window_start_seq = currentSequence;
-            }
 
              //Sends a packet. It may be lost on its way.
             if (randNumber < (1 - LOSS_PACKET_PROB)*10) {
@@ -101,15 +104,14 @@ int main(int argc, char *argv[]) {
                     error("Sendto");
                 delete[] packet;
                 cout << "Send packet with Seq: " << currentSequence << endl;
-            }
 
-            if (!retransmitting){
-                window_list.push_back(currentSequence);
+                if (!retransmitting){
+                    window_list.push_back(currentSequence);
+                }
             }
             currentSequence += PACKET_SIZE;
         }
-        cout << "Sent the window up to ACK seq: " << (currentSequence - 1) << endl;
-        t1 = time(nullptr);
+        printWindow();
         window_lock.unlock();
 
         condition_var.wait_for(my_lock, chrono::seconds(time_out));
@@ -135,10 +137,10 @@ void ack_listener() {
         TCP_Header header(message);
         window = header.getWindow();
         currentSequence = header.getAck();
-        cout << "Received an ACK. Window: " << window << " ACK Num: " << currentSequence << endl;
+        cout << "Received an ACK. Window size: " << window << " ACK Num: " << currentSequence << endl;
         if (!retransmitting){
             t2 = time(nullptr);
-            double RTTnew = (t2 - t1)/1000;
+            double RTTnew = (t2 - t1);
             RTT = (1 - ALFA)*RTTnew + ALFA*RTT;
             time_out = static_cast<unsigned>(RTT * BETA);
             cout << "New RTT: " << RTTnew << " Updated to " << RTT << endl;
@@ -148,4 +150,14 @@ void ack_listener() {
         retransmitting = false;
         window_lock.unlock();
     }
+}
+
+void printWindow(){
+    auto iterator = window_list.begin();
+    cout << "Window: ";
+    while (iterator != window_list.end()){
+        cout << *iterator << "  ";
+        iterator++;
+    }
+    cout << endl;
 }
