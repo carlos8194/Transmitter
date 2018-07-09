@@ -1,19 +1,15 @@
 #include <iostream>
 #include <list>
 #include <mutex>
+#include <thread>
 #include <condition_variable>
-#include <chrono>
 
-#include <sys/types.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <string.h>
 #include <netdb.h>
-#include <stdio.h>
-#include <time.h>
-#include <thread>
 #include "TCP_Header.h"
 
 #define BETA 2
@@ -48,6 +44,7 @@ struct hostent *hp;
 
 void error(const char*);
 void ack_listener();
+
 void error(const char *msg)
 {
     perror(msg);
@@ -90,6 +87,7 @@ int main(int argc, char *argv[]) {
             // Depending on the retransmitting condition adjust the sequence numbers.
             if(retransmitting){
                 currentSequence = window_start_seq;
+                cout << "Retransmitting window. First Seq: " << currentSequence << endl;
             } else{
                 window_start_seq = currentSequence;
             }
@@ -103,6 +101,7 @@ int main(int argc, char *argv[]) {
                 n = sendto(sock, packet, HEADER_SIZE, 0, (const struct sockaddr *) &server, length);
                 if (n < 0)
                     error("Sendto");
+                delete[] packet;
             }
 
             if (!retransmitting){
@@ -110,6 +109,7 @@ int main(int argc, char *argv[]) {
             }
             currentSequence += PACKET_SIZE;
         }
+        cout << "Sent the window up to ACK seq: " << (currentSequence - 1) << endl;
         t1 = clock();
         window_lock.unlock();
 
@@ -135,10 +135,14 @@ void ack_listener() {
         ack_received = true;
         TCP_Header header(message);
         window = header.getWindow();
+        currentSequence = header.getAck();
+        cout << "Received an ACK. Window: " << window << " ACK Num: " << currentSequence << endl;
         if (!retransmitting){
-            double RTTnew = t1 - t2;
+            double RTTnew = (t2 - t1)/1000;
             RTT = (1 - ALFA)*RTTnew + ALFA*RTT;
             time_out = static_cast<unsigned>(RTT * BETA);
+            cout << "New RTT: " << RTT << endl;
+            cout << "New timeOut: " << RTT << endl;
         }
         window_list.clear();
         retransmitting = false;
