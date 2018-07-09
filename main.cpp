@@ -92,16 +92,15 @@ int main(int argc, char *argv[]) {
                 window_start_seq = currentSequence;
             }
 
-            /*
-             * Sends a packet. It may be lost on its way.
-             */
-            if (randNumber < (1 - LOSS_PACKET_PROB)) {
+             //Sends a packet. It may be lost on its way.
+            if (randNumber < (1 - LOSS_PACKET_PROB)*10) {
                 TCP_Header tcp_header(currentSequence, 0, window, false);
                 auto packet = tcp_header.header_to_Array();
                 n = sendto(sock, packet, HEADER_SIZE, 0, (const struct sockaddr *) &server, length);
                 if (n < 0)
                     error("Sendto");
                 delete[] packet;
+                cout << "Send packet with Seq: " << currentSequence << endl;
             }
 
             if (!retransmitting){
@@ -110,7 +109,7 @@ int main(int argc, char *argv[]) {
             currentSequence += PACKET_SIZE;
         }
         cout << "Sent the window up to ACK seq: " << (currentSequence - 1) << endl;
-        t1 = clock();
+        t1 = time(nullptr);
         window_lock.unlock();
 
         condition_var.wait_for(my_lock, chrono::seconds(time_out));
@@ -131,22 +130,22 @@ void ack_listener() {
         if (n < 0)
             error("recvfrom");
         window_lock.lock();
-        t2 = clock();
         ack_received = true;
+        condition_var.notify_one();
         TCP_Header header(message);
         window = header.getWindow();
         currentSequence = header.getAck();
         cout << "Received an ACK. Window: " << window << " ACK Num: " << currentSequence << endl;
         if (!retransmitting){
+            t2 = time(nullptr);
             double RTTnew = (t2 - t1)/1000;
             RTT = (1 - ALFA)*RTTnew + ALFA*RTT;
             time_out = static_cast<unsigned>(RTT * BETA);
-            cout << "New RTT: " << RTT << endl;
-            cout << "New timeOut: " << RTT << endl;
+            cout << "New RTT: " << RTTnew << " Updated to " << RTT << endl;
+            cout << "New timeOut: " << time_out << endl;
         }
         window_list.clear();
         retransmitting = false;
-        condition_var.notify_one();
         window_lock.unlock();
     }
 }
