@@ -17,7 +17,6 @@
 #define PACKET_SIZE 1
 #define DEFAULT_PORT 9090
 #define LOSS_PACKET_PROB 0.2
-#define PACKET_SEND_TIME 1
 #define INIT_SEQUENCE 1
 
 using namespace std;
@@ -30,7 +29,7 @@ mutex window_lock;
 condition_variable condition_var;
 unsigned short window = 10;
 unsigned currentSequence = INIT_SEQUENCE;
-unsigned time_out = static_cast<unsigned>(RTT * BETA);
+unsigned time_out = static_cast<unsigned>(RTT * BETA); // In milliseconds
 list<unsigned> window_list;
 unsigned window_start_seq = INIT_SEQUENCE;
 bool ack_received = false;
@@ -89,11 +88,11 @@ int main(int argc, char *argv[]) {
             window_start_seq = currentSequence;
         }
 
-        t1 = time(nullptr);
         for (unsigned short i = 0; i < window; ++i) {
             // Send a packet at a time.
-            this_thread::sleep_for(chrono::seconds(PACKET_SEND_TIME)); // Wait 1 second
             randNumber = rand() % 10;
+            auto packet_send_time = static_cast<unsigned int>(randNumber*50 + 500); // from 500-1000 milliseconds
+            this_thread::sleep_for(chrono::milliseconds(packet_send_time));
 
              //Sends a packet. It may be lost on its way.
             if (randNumber < (1 - LOSS_PACKET_PROB)*10) {
@@ -109,12 +108,15 @@ int main(int argc, char *argv[]) {
                     window_list.push_back(currentSequence);
                 }
             }
+            if (i == 0){
+                t1 = time(nullptr);
+            }
             currentSequence += PACKET_SIZE;
         }
         printWindow();
         window_lock.unlock();
 
-        condition_var.wait_for(my_lock, chrono::seconds(time_out));
+        condition_var.wait_for(my_lock, chrono::milliseconds(time_out));
 
         window_lock.lock();
         // Check if time ran out to start retransmitting.
@@ -142,9 +144,9 @@ void ack_listener() {
             t2 = time(nullptr);
             double RTTnew = (t2 - t1);
             RTT = (1 - ALFA)*RTTnew + ALFA*RTT;
-            time_out = static_cast<unsigned>(RTT * BETA);
-            cout << "New RTT: " << RTTnew << " Updated to " << RTT << endl;
-            cout << "New timeOut: " << time_out << endl;
+            time_out = static_cast<unsigned int>(BETA*1000*RTT);
+            cout << "New RTT: " << RTTnew << " Updated to " << RTT << " seconds" << endl;
+            cout << "New timeOut: " << time_out/1000 << " seconds" << endl;
         }
         window_list.clear();
         retransmitting = false;
